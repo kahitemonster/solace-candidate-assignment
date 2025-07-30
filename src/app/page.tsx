@@ -1,91 +1,126 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import useSWR from "swr";
+import { Search } from "lucide-react";
+import { Combobox } from "@headlessui/react";
+import { useDebounce } from "./hooks/useDebounce";
+import { Pagination } from "./components/Pagination";
+import { AdvocateCard } from "./components/AdvocateCard";
+import { SPECIALTY_LIST } from "./constants/constants";
+
+interface Advocate {
+  id: string;
+  firstName: string;
+  lastName: string;
+  city: string;
+  degree: string;
+  specialties: string[];
+  yearsOfExperience: number;
+  phoneNumber: string;
+}
+
+const fetcher = (url: string) => fetch(url).then(r => r.json());
 
 export default function Home() {
-  const [advocates, setAdvocates] = useState([]);
-  const [filteredAdvocates, setFilteredAdvocates] = useState([]);
+  const [name, setName] = useState("");
+  const [city, setCity] = useState("");
+  const [specs, setSpecs] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const debouncedName = useDebounce(name, 300);
+  const debouncedCity = useDebounce(city, 300);
 
-  useEffect(() => {
-    console.log("fetching advocates...");
-    fetch("/api/advocates").then((response) => {
-      response.json().then((jsonResponse) => {
-        setAdvocates(jsonResponse.data);
-        setFilteredAdvocates(jsonResponse.data);
-      });
-    });
-  }, []);
+  const { data, error, isValidating } = useSWR(
+    () => `/api/advocates?` +
+      new URLSearchParams({
+        name: debouncedName,
+        city: debouncedCity,
+        specialties: specs.join("#"),
+        page: String(page),
+        pageSize: "6"
+      }).toString(),
+    fetcher,
+    { revalidateOnFocus: false }
+  );
 
-  const onChange = (e) => {
-    const searchTerm = e.target.value;
-
-    document.getElementById("search-term").innerHTML = searchTerm;
-
-    console.log("filtering advocates...");
-    const filteredAdvocates = advocates.filter((advocate) => {
-      return (
-        advocate.firstName.includes(searchTerm) ||
-        advocate.lastName.includes(searchTerm) ||
-        advocate.city.includes(searchTerm) ||
-        advocate.degree.includes(searchTerm) ||
-        advocate.specialties.includes(searchTerm) ||
-        advocate.yearsOfExperience.includes(searchTerm)
-      );
-    });
-
-    setFilteredAdvocates(filteredAdvocates);
-  };
-
-  const onClick = () => {
-    console.log(advocates);
-    setFilteredAdvocates(advocates);
-  };
+  const advocates = data?.data || [];
+  const total = data?.total || 0;
 
   return (
-    <main style={{ margin: "24px" }}>
-      <h1>Solace Advocates</h1>
-      <br />
-      <br />
-      <div>
-        <p>Search</p>
-        <p>
-          Searching for: <span id="search-term"></span>
-        </p>
-        <input style={{ border: "1px solid black" }} onChange={onChange} />
-        <button onClick={onClick}>Reset Search</button>
+    <div className="container mx-auto px-6 py-10">
+      {/* Filters */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2">
+        <div className="relative flex items-center">
+          <Search className="w-5 h-5 absolute left-3 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search name…"
+            value={name}
+            onChange={e => { setName(e.target.value); setPage(1); }}
+            className="pl-10 pr-4 py-2 w-full border rounded dark:bg-gray-800"
+          />
+        </div>
+
+        <div className="relative flex items-center">
+          <Search className="w-5 h-5 absolute left-3 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search city…"
+            value={city}
+            onChange={e => { setCity(e.target.value); setPage(1); }}
+            className="pl-10 pr-4 py-2 w-full border rounded dark:bg-gray-800"
+          />
+        </div>
+
+        <Combobox value={specs} onChange={setSpecs} multiple>
+          <div className="relative">
+            <Combobox.Input
+              className="w-full border rounded py-2 px-4 dark:bg-gray-800"
+              placeholder="Filter specialties…"
+              onChange={e => { }}
+            />
+            <Combobox.Options className="absolute z-20 mt-1 w-full bg-white border rounded max-h-100 overflow-auto dark:bg-gray-800">
+              {SPECIALTY_LIST.map(spec => (
+                <Combobox.Option key={spec} value={spec}>
+                  {({ selected }) => (
+                    <button className={`m-1 ${selected ? "bg-blue-100 text-black" : ""}`}>
+                      {spec}
+                    </button>
+                  )}
+                </Combobox.Option>
+              ))}
+            </Combobox.Options>
+          </div>
+        </Combobox>
       </div>
-      <br />
-      <br />
-      <table>
-        <thead>
-          <th>First Name</th>
-          <th>Last Name</th>
-          <th>City</th>
-          <th>Degree</th>
-          <th>Specialties</th>
-          <th>Years of Experience</th>
-          <th>Phone Number</th>
-        </thead>
-        <tbody>
-          {filteredAdvocates.map((advocate) => {
-            return (
-              <tr>
-                <td>{advocate.firstName}</td>
-                <td>{advocate.lastName}</td>
-                <td>{advocate.city}</td>
-                <td>{advocate.degree}</td>
-                <td>
-                  {advocate.specialties.map((s) => (
-                    <div>{s}</div>
-                  ))}
-                </td>
-                <td>{advocate.yearsOfExperience}</td>
-                <td>{advocate.phoneNumber}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </main>
+      <div className="mt-2 flex flex-wrap gap-2 mb-8">
+        {specs.map(spec => (
+          <span key={spec} className="px-3 py-1 bg-blue-200 rounded-full dark:text-black">
+            {spec} <button onClick={() => setSpecs(specs.filter(s => s !== spec))}>×</button>
+          </span>
+        ))}
+      </div>
+
+      {/* Loading / Error */}
+      {isValidating && <p>Loading…</p>}
+      {error && <p className="text-red-500">Failed to load advocates.</p>}
+      {!error && advocates.length == 0 && <p>No advocate to show.</p>}
+
+      {/* Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {advocates.map((adv: Advocate) => (
+          <AdvocateCard key={adv.id} advocate={adv} />
+        ))}
+      </div>
+
+      {/* Pagination */}
+      {total > 6 && (
+        <Pagination
+          currentPage={page}
+          totalPages={Math.ceil(total / 6)}
+          onPageChange={p => setPage(p)}
+        />
+      )}
+    </div>
   );
 }
